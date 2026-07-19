@@ -1,7 +1,8 @@
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GeneratedProject } from '@/utils/generators';
+import { exportProjectAsZip } from '@/utils/export';
 import { useColors } from '@/hooks/useColors';
 
 const TYPE_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
@@ -31,6 +32,22 @@ interface Props {
 export function ProjectCard({ project, onPress, onDelete }: Props) {
   const c = useColors();
   const cfg = TYPE_CONFIG[project.appType] ?? TYPE_CONFIG.generic;
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Export', 'APK export is available on Android/iOS devices.');
+      return;
+    }
+    setExporting(true);
+    try {
+      await exportProjectAsZip(project);
+    } catch (e: any) {
+      Alert.alert('Export Failed', e?.message ?? 'Unknown error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <TouchableOpacity
@@ -64,10 +81,25 @@ export function ProjectCard({ project, onPress, onDelete }: Props) {
         </View>
       </View>
 
+      {/* Export APK zip */}
+      <TouchableOpacity
+        onPress={handleExport}
+        hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+        style={styles.actionBtn}
+        disabled={exporting}
+      >
+        {exporting ? (
+          <ActivityIndicator size={16} color="#00E676" />
+        ) : (
+          <Ionicons name="download-outline" size={18} color="#00E676" />
+        )}
+      </TouchableOpacity>
+
+      {/* Delete */}
       <TouchableOpacity
         onPress={onDelete}
-        hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
-        style={styles.deleteBtn}
+        hitSlop={{ top: 10, right: 12, bottom: 10, left: 8 }}
+        style={styles.actionBtn}
       >
         <Ionicons name="trash-outline" size={17} color={c.mutedForeground} />
       </TouchableOpacity>
@@ -123,7 +155,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter_400Regular',
   },
-  deleteBtn: {
+  actionBtn: {
     padding: 4,
   },
 });
