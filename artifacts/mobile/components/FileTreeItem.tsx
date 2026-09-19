@@ -11,6 +11,9 @@ function fileIcon(file: GeneratedFile): { name: keyof typeof Ionicons.glyphMap; 
     case 'gradle':   return { name: 'settings-outline', color: '#7C4DFF' };
     case 'toml':     return { name: 'document-outline', color: '#00BCD4' };
     case 'markdown': return { name: 'reader-outline', color: '#9E9E9E' };
+    case 'python':   return { name: 'logo-python', color: '#FFD43B' };
+    case 'yaml':     return { name: 'git-branch-outline', color: '#FF6D00' };
+    case 'text':     return { name: 'document-text-outline', color: '#9E9E9E' };
     default:         return { name: 'document-text-outline', color: '#9E9E9E' };
   }
 }

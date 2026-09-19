@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TouchableOpacity,
 import { Ionicons } from '@expo/vector-icons';
 import { GeneratedProject } from '@/utils/generators';
 import { exportProjectAsZip } from '@/utils/export';
+import { pushProjectToGitHub } from '@/utils/github';
 import { useColors } from '@/hooks/useColors';
 
 const TYPE_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
@@ -33,6 +34,7 @@ export function ProjectCard({ project, onPress, onDelete }: Props) {
   const c = useColors();
   const cfg = TYPE_CONFIG[project.appType] ?? TYPE_CONFIG.generic;
   const [exporting, setExporting] = useState(false);
+  const [pushing, setPushing] = useState(false);
 
   const handleExport = async () => {
     if (Platform.OS === 'web') {
@@ -46,6 +48,18 @@ export function ProjectCard({ project, onPress, onDelete }: Props) {
       Alert.alert('Export Failed', e?.message ?? 'Unknown error');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handlePushToGitHub = async () => {
+    setPushing(true);
+    try {
+      const result = await pushProjectToGitHub(project);
+      Alert.alert('Pushed to GitHub', `${result.pushed} files are now in ${result.repo}.`);
+    } catch (e: any) {
+      Alert.alert('GitHub Push Failed', e?.message ?? 'Could not push this project.');
+    } finally {
+      setPushing(false);
     }
   };
 
@@ -81,7 +95,21 @@ export function ProjectCard({ project, onPress, onDelete }: Props) {
         </View>
       </View>
 
-      {/* Export APK zip */}
+      {/* Push the complete source tree to GitHub */}
+      <TouchableOpacity
+        onPress={handlePushToGitHub}
+        hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+        style={styles.actionBtn}
+        disabled={pushing}
+      >
+        {pushing ? (
+          <ActivityIndicator size={16} color="#7C4DFF" />
+        ) : (
+          <Ionicons name="logo-github" size={18} color="#7C4DFF" />
+        )}
+      </TouchableOpacity>
+
+      {/* Export source ZIP */}
       <TouchableOpacity
         onPress={handleExport}
         hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
