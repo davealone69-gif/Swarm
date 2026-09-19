@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Keyboard,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +18,7 @@ import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useSwarm } from '@/context/SwarmContext';
 import { AgentCard } from '@/components/AgentCard';
+import { analyzePrompt, ClarificationAnswers, ClarifyingQuestion, LocalAiPlan } from '@/utils/local-ai';
 
 const QUICK_PROMPTS = [
   { label: 'Calculator', icon: 'calculator-outline' as const, prompt: 'Build a modern calculator app with scientific functions and memory' },
@@ -35,6 +37,8 @@ export default function BuildScreen() {
   const { generateApp, isGenerating, agentStates, currentProject, lastError, clearError } = useSwarm();
   const [prompt, setPrompt] = useState('');
   const [activeChip, setActiveChip] = useState<number | null>(null);
+  const [aiPlan, setAiPlan] = useState<LocalAiPlan | null>(null);
+  const [answers, setAnswers] = useState<ClarificationAnswers>({});
   const scrollRef = useRef<ScrollView>(null);
 
   const showAgents = isGenerating || agentStates.some((a) => a.status !== 'idle');
@@ -46,12 +50,35 @@ export default function BuildScreen() {
     if (Platform.OS !== 'web') Haptics.selectionAsync();
   };
 
-  const handleGenerate = async () => {
+  const startGeneration = async (clarifications: ClarificationAnswers = {}) => {
     if (!prompt.trim() || isGenerating) return;
+    setAiPlan(null);
     Keyboard.dismiss();
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
-    await generateApp(prompt);
+    await generateApp(prompt, clarifications);
+  };
+
+  const handleGenerate = async () => {
+    if (!prompt.trim() || isGenerating) return;
+    const plan = analyzePrompt(prompt);
+    if (plan.questions.length > 0) {
+      setAnswers({});
+      setAiPlan(plan);
+      return;
+    }
+    await startGeneration();
+  };
+
+  const answerQuestion = (question: ClarifyingQuestion, answer: string) => {
+    setAnswers((current) => ({ ...current, [question.id]: answer }));
+  };
+
+  const continueAfterQuestions = async () => {
+    if (!aiPlan) return;
+    const missing = aiPlan.questions.some((question) => question.required && !answers[question.id]);
+    if (missing) return;
+    await startGeneration(answers);
   };
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -237,6 +264,96 @@ export default function BuildScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={aiPlan !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAiPlan(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.aiSheet, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={styles.aiSheetHeader}>
+              <View style={[styles.aiIcon, { backgroundColor: '#7C4DFF20', borderColor: '#7C4DFF50' }]}>
+                <Ionicons name="sparkles-outline" size={20} color="#7C4DFF" />
+              </View>
+              <View style={styles.aiHeaderCopy}>
+                <Text style={[styles.aiTitle, { color: c.foreground }]}>OFFLINE AI CHECK</Text>
+                <Text style={[styles.aiSubtitle, { color: c.mutedForeground }]}>
+                  No API key. No cloud credits. Nothing leaves this device.
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setAiPlan(null)} hitSlop={12}>
+                <Ionicons name="close" size={20} color={c.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.aiSummary, { color: c.foreground }]}>
+              {aiPlan?.summary}
+            </Text>
+            <Text style={[styles.confidence, { color: '#FF6D00' }]}>
+              CONFIDENCE {Math.round((aiPlan?.confidence ?? 0) * 100)}% · ANSWER TO CONTINUE
+            </Text>
+
+            <ScrollView
+              style={styles.questionsScroll}
+              contentContainerStyle={styles.questionsContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {aiPlan?.questions.map((question) => (
+                <View key={question.id} style={styles.questionBlock}>
+                  <Text style={[styles.questionTitle, { color: c.foreground }]}>{question.title}</Text>
+                  <Text style={[styles.questionDetail, { color: c.mutedForeground }]}>{question.detail}</Text>
+                  <View style={styles.optionsGrid}>
+                    {question.options.map((option) => {
+                      const selected = answers[question.id] === option;
+                      return (
+                        <TouchableOpacity
+                          key={option}
+                          style={[
+                            styles.option,
+                            {
+                              backgroundColor: selected ? '#00E67618' : TERMINAL_BG,
+                              borderColor: selected ? '#00E676' : c.border,
+                            },
+                          ]}
+                          onPress={() => answerQuestion(question, option)}
+                          activeOpacity={0.75}
+                        >
+                          <Ionicons
+                            name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={16}
+                            color={selected ? '#00E676' : c.mutedForeground}
+                          />
+                          <Text style={[styles.optionText, { color: selected ? '#00E676' : c.foreground }]}>
+                            {option}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[
+                styles.continueButton,
+                {
+                  backgroundColor: aiPlan?.questions.some((q) => q.required && !answers[q.id])
+                    ? '#00E67640'
+                    : '#00E676',
+                },
+              ]}
+              onPress={continueAfterQuestions}
+              disabled={aiPlan?.questions.some((q) => q.required && !answers[q.id])}
+            >
+              <Ionicons name="flash" size={18} color="#0A0A0F" />
+              <Text style={styles.continueText}>BUILD WITH THESE DECISIONS</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -322,4 +439,57 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingVertical: 10, borderWidth: 1,
   },
   successBtnOutlineText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.72)',
+  },
+  aiSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    padding: 18,
+    paddingBottom: Platform.OS === 'web' ? 24 : 30,
+    maxHeight: '88%',
+  },
+  aiSheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  aiIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  aiHeaderCopy: { flex: 1, gap: 2 },
+  aiTitle: { fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1.2 },
+  aiSubtitle: { fontSize: 10, fontFamily: 'Inter_400Regular' },
+  aiSummary: { fontSize: 15, fontFamily: 'Inter_600SemiBold', marginTop: 18 },
+  confidence: { fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 1, marginTop: 6 },
+  questionsScroll: { marginTop: 14 },
+  questionsContent: { gap: 18, paddingBottom: 14 },
+  questionBlock: { gap: 6 },
+  questionTitle: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
+  questionDetail: { fontSize: 11, fontFamily: 'Inter_400Regular', lineHeight: 16 },
+  optionsGrid: { gap: 7, marginTop: 3 },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 9,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+  },
+  optionText: { flex: 1, fontSize: 12, fontFamily: 'Inter_500Medium' },
+  continueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 11,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  continueText: { color: '#0A0A0F', fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
 });

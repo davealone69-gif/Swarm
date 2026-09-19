@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateProject, GeneratedProject, AgentProgress, AgentName } from '@/utils/generators';
+import { applyClarifications, ClarificationAnswers } from '@/utils/local-ai';
 
 const STORAGE_KEY = '@swarm_projects_v1';
 
@@ -17,7 +18,7 @@ interface SwarmState {
   isGenerating: boolean;
   agentStates: AgentState[];
   lastError: string | null;
-  generateApp: (prompt: string) => Promise<void>;
+  generateApp: (prompt: string, answers?: ClarificationAnswers) => Promise<void>;
   setCurrentProject: (p: GeneratedProject | null) => void;
   deleteProject: (id: string) => void;
   clearError: () => void;
@@ -62,7 +63,7 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const generateApp = useCallback(async (prompt: string) => {
+  const generateApp = useCallback(async (prompt: string, answers: ClarificationAnswers = {}) => {
     if (isGenerating || !prompt.trim()) return;
     setIsGenerating(true);
     setLastError(null);
@@ -71,7 +72,8 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
     setAgentStates(INITIAL_AGENTS.map((a) => ({ ...a, action: 'Standing by…', status: 'idle' })));
 
     try {
-      const project = await generateProject(prompt, (progress: AgentProgress) => {
+      const resolvedPrompt = applyClarifications(prompt, answers);
+      const project = await generateProject(resolvedPrompt, (progress: AgentProgress) => {
         setAgentStates((prev) =>
           prev.map((a) =>
             a.name === progress.agent
@@ -79,7 +81,7 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
               : a,
           ),
         );
-      });
+      }, answers);
 
       const updated = [project, ...projects];
       setProjects(updated);
