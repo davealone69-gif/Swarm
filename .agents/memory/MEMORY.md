@@ -1,1 +1,2 @@
 - [Offline builder AI](offline-builder-ai.md) — keep prompt planning on-device and ask clarifying questions without paid APIs or cloud credits.
+- [GitHub-first builds](github-first-build.md) — generated Android/Python projects include CI workflows and push through the server-side connector.

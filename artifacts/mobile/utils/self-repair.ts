@@ -1,4 +1,4 @@
-export type RepairLanguage = 'kotlin' | 'xml' | 'gradle' | 'toml' | 'markdown';
+export type RepairLanguage = 'kotlin' | 'xml' | 'gradle' | 'toml' | 'markdown' | 'python' | 'yaml' | 'text';
 
 export interface RepairableFile {
   path: string;
@@ -59,7 +59,7 @@ ${settings.content}`;
     lessons.push('Release buildTypes must ship the proguard-rules.pro file they reference.');
   }
 
-  if (!hasFile(files, 'gradle.properties')) {
+  if ((settings || appBuild) && !hasFile(files, 'gradle.properties')) {
     files.push({
       path: 'gradle.properties',
       language: 'gradle',
