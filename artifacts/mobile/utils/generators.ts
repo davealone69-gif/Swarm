@@ -1,6 +1,8 @@
 // SWARM-BUILDER-ZERO — Android Code Generation Engine
 // Generates complete, compilable Android (Kotlin/Compose) project structures
 
+import { selfRepairFiles } from './self-repair';
+
 export type AppType =
   | 'calculator'
   | 'notes'
@@ -28,6 +30,10 @@ export interface GeneratedProject {
   files: GeneratedFile[];
   createdAt: number;
   decisions?: Record<string, string>;
+  repairReport?: {
+    repairs: string[];
+    lessons: string[];
+  };
 }
 
 export type AgentName = 'ARCHITECT' | 'CODER' | 'BUILDER' | 'FIXER' | 'OPTIMIZER';
@@ -1656,6 +1662,7 @@ export async function generateProject(
   prompt: string,
   onAgentProgress: (progress: AgentProgress) => void,
   decisions: Record<string, string> = {},
+  previousLessons: string[] = [],
 ): Promise<GeneratedProject> {
   const type = detectAppType(prompt);
   const appName = extractAppName(prompt, type);
@@ -1690,17 +1697,7 @@ export async function generateProject(
   await sleep(700);
   onAgentProgress({ agent: 'BUILDER', action: 'Build files configured (SDK 35 / KGP 2.1.0)', status: 'complete' });
 
-  // Agent: FIXER
-  onAgentProgress({ agent: 'FIXER', action: 'Patching imports + type safety…', status: 'active' });
-  await sleep(600);
-  onAgentProgress({ agent: 'FIXER', action: 'All imports verified, no errors detected', status: 'complete' });
-
-  // Agent: OPTIMIZER
-  onAgentProgress({ agent: 'OPTIMIZER', action: 'Applying Compose performance optimizations…', status: 'active' });
-  await sleep(400);
-  onAgentProgress({ agent: 'OPTIMIZER', action: 'Project optimized — ready to compile', status: 'complete' });
-
-  const files: GeneratedFile[] = [
+  const rawFiles: GeneratedFile[] = [
     settingsGradle(appName),
     rootBuildGradle(),
     libsVersionsToml(),
@@ -1717,6 +1714,22 @@ export async function generateProject(
     proguardRules(),
     readmeFile(appName, type, description, packageName),
   ];
+  // Agent: FIXER — inspect and repair the actual generated project.
+  onAgentProgress({ agent: 'FIXER', action: 'Running offline structural repair scan…', status: 'active' });
+  await sleep(600);
+  const repaired = selfRepairFiles(rawFiles, previousLessons);
+  onAgentProgress({
+    agent: 'FIXER',
+    action: repaired.report.repairs.length > 0
+      ? `Self-repaired ${repaired.report.repairs.length} project issue(s)`
+      : 'No structural issues found in repair scan',
+    status: 'complete',
+  });
+
+  // Agent: OPTIMIZER
+  onAgentProgress({ agent: 'OPTIMIZER', action: 'Applying Compose performance optimizations…', status: 'active' });
+  await sleep(400);
+  onAgentProgress({ agent: 'OPTIMIZER', action: 'Project optimized — ready to compile', status: 'complete' });
 
   return {
     id,
@@ -1725,8 +1738,9 @@ export async function generateProject(
     prompt,
     packageName,
     appType: type,
-    files,
+    files: repaired.files,
     createdAt: Date.now(),
     decisions,
+    repairReport: repaired.report,
   };
 }

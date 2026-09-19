@@ -4,6 +4,16 @@ import { generateProject, GeneratedProject, AgentProgress, AgentName } from '@/u
 import { applyClarifications, ClarificationAnswers } from '@/utils/local-ai';
 
 const STORAGE_KEY = '@swarm_projects_v1';
+const LESSONS_KEY = '@swarm_repair_lessons_v1';
+const KNOWLEDGE_KEY = '@swarm_local_knowledge_v1';
+
+export interface KnowledgeItem {
+  id: string;
+  name: string;
+  kind: 'code' | 'skill';
+  content: string;
+  addedAt: number;
+}
 
 export interface AgentState {
   name: AgentName;
@@ -18,7 +28,10 @@ interface SwarmState {
   isGenerating: boolean;
   agentStates: AgentState[];
   lastError: string | null;
+  learnedLessons: string[];
+  knowledge: KnowledgeItem[];
   generateApp: (prompt: string, answers?: ClarificationAnswers) => Promise<void>;
+  importKnowledge: (item: Omit<KnowledgeItem, 'id' | 'addedAt'>) => Promise<void>;
   setCurrentProject: (p: GeneratedProject | null) => void;
   deleteProject: (id: string) => void;
   clearError: () => void;
@@ -40,6 +53,8 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [agentStates, setAgentStates] = useState<AgentState[]>(INITIAL_AGENTS);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [learnedLessons, setLearnedLessons] = useState<string[]>([]);
+  const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
 
   // Load persisted projects on mount
   useEffect(() => {
@@ -51,6 +66,16 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // ignore parse errors
         }
+      }
+    });
+    AsyncStorage.getItem(LESSONS_KEY).then((raw) => {
+      if (raw) {
+        try { setLearnedLessons(JSON.parse(raw)); } catch { /* ignore malformed local memory */ }
+      }
+    });
+    AsyncStorage.getItem(KNOWLEDGE_KEY).then((raw) => {
+      if (raw) {
+        try { setKnowledge(JSON.parse(raw)); } catch { /* ignore malformed local memory */ }
       }
     });
   }, []);
@@ -72,7 +97,14 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
     setAgentStates(INITIAL_AGENTS.map((a) => ({ ...a, action: 'Standing by…', status: 'idle' })));
 
     try {
-      const resolvedPrompt = applyClarifications(prompt, answers);
+      const localReferences = knowledge
+        .slice(-5)
+        .map((item) => `Reference ${item.kind} "${item.name}":\n${item.content.slice(0, 12000)}`)
+        .join('\n\n');
+      const resolvedPrompt = applyClarifications(
+        localReferences ? `${prompt}\n\nLocal references:\n${localReferences}` : prompt,
+        answers,
+      );
       const project = await generateProject(resolvedPrompt, (progress: AgentProgress) => {
         setAgentStates((prev) =>
           prev.map((a) =>
@@ -81,18 +113,35 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
               : a,
           ),
         );
-      }, answers);
+      }, answers, learnedLessons);
 
       const updated = [project, ...projects];
       setProjects(updated);
       setCurrentProject(project);
       await persistProjects(updated);
+      const newLessons = project.repairReport?.lessons ?? [];
+      if (newLessons.length > 0) {
+        const mergedLessons = Array.from(new Set([...learnedLessons, ...newLessons])).slice(-20);
+        setLearnedLessons(mergedLessons);
+        await AsyncStorage.setItem(LESSONS_KEY, JSON.stringify(mergedLessons));
+      }
     } catch (err) {
       setLastError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
       setIsGenerating(false);
     }
-  }, [isGenerating, projects, persistProjects]);
+  }, [isGenerating, projects, persistProjects, knowledge, learnedLessons]);
+
+  const importKnowledge = useCallback(async (item: Omit<KnowledgeItem, 'id' | 'addedAt'>) => {
+    const saved: KnowledgeItem = {
+      ...item,
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 8),
+      addedAt: Date.now(),
+    };
+    const updated = [...knowledge, saved].slice(-10);
+    setKnowledge(updated);
+    await AsyncStorage.setItem(KNOWLEDGE_KEY, JSON.stringify(updated));
+  }, [knowledge]);
 
   const deleteProject = useCallback(
     async (id: string) => {
@@ -112,7 +161,10 @@ export function SwarmProvider({ children }: { children: React.ReactNode }) {
         isGenerating,
         agentStates,
         lastError,
+        learnedLessons,
+        knowledge,
         generateApp,
+        importKnowledge,
         setCurrentProject,
         deleteProject,
         clearError: () => setLastError(null),
