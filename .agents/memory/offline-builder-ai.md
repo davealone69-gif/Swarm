@@ -7,4 +7,6 @@ The builder must remain usable without paid APIs, API keys, or cloud credits. It
 
 **Why:** The product is explicitly intended to be 100% free and must not silently introduce metered AI usage.
 
-**How to apply:** Prefer local heuristics and offline Android templates. If a future cloud model is offered, make it optional and never required for generation.
+The generator also keeps a small local lesson history from repair scans and accepts imported code/skill text as private references; cap both histories so generation stays bounded.
+
+**How to apply:** Prefer local heuristics and offline Android templates. If a future cloud model is offered, make it optional and never required for generation. Never upload imported source by default.

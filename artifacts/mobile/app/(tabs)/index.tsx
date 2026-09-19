@@ -14,6 +14,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useSwarm } from '@/context/SwarmContext';
@@ -34,11 +36,23 @@ const TERMINAL_BG = '#0D0D15';
 export default function BuildScreen() {
   const insets = useSafeAreaInsets();
   const c = useColors();
-  const { generateApp, isGenerating, agentStates, currentProject, lastError, clearError } = useSwarm();
+  const {
+    generateApp,
+    isGenerating,
+    agentStates,
+    currentProject,
+    lastError,
+    clearError,
+    importKnowledge,
+    knowledge,
+    learnedLessons,
+  } = useSwarm();
   const [prompt, setPrompt] = useState('');
   const [activeChip, setActiveChip] = useState<number | null>(null);
   const [aiPlan, setAiPlan] = useState<LocalAiPlan | null>(null);
   const [answers, setAnswers] = useState<ClarificationAnswers>({});
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const showAgents = isGenerating || agentStates.some((a) => a.status !== 'idle');
@@ -81,6 +95,35 @@ export default function BuildScreen() {
     await startGeneration(answers);
   };
 
+  const handleImportKnowledge = async () => {
+    if (importing) return;
+    setImporting(true);
+    setImportStatus(null);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/*', 'application/json', 'application/octet-stream'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const content = Platform.OS === 'web'
+        ? await fetch(asset.uri).then((response) => response.text())
+        : await new File(asset.uri).text();
+      if (!content.trim()) throw new Error('The selected file is empty.');
+
+      const clipped = content.slice(0, 60000);
+      const kind = /\.(md|skill)$/i.test(asset.name) || /skill/i.test(asset.name) ? 'skill' : 'code';
+      await importKnowledge({ name: asset.name, kind, content: clipped });
+      setImportStatus(`Imported ${kind}: ${asset.name}`);
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : 'Could not read that file.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   return (
@@ -100,7 +143,7 @@ export default function BuildScreen() {
             <View>
               <Text style={[styles.title, { color: '#00E676' }]}>SWARM-BUILDER-ZERO</Text>
               <Text style={[styles.subtitle, { color: c.mutedForeground }]}>
-                5-Agent Android App Generator
+                5-Agent Android App Generator · Offline AI
               </Text>
             </View>
             <View style={[styles.versionBadge, { backgroundColor: '#7C4DFF20', borderColor: '#7C4DFF40' }]}>
@@ -110,10 +153,10 @@ export default function BuildScreen() {
 
           {/* Stats row */}
           <View style={[styles.statsRow, { backgroundColor: TERMINAL_BG, borderColor: c.border }]}>
-            {[
+              {[
               { label: 'AGENTS', val: '5' },
               { label: 'TEMPLATES', val: '7' },
-              { label: 'FILES/APP', val: '12' },
+                { label: 'FILES/APP', val: '15' },
               { label: 'SDK', val: '35' },
             ].map((s) => (
               <View key={s.label} style={styles.statItem}>
@@ -176,6 +219,32 @@ export default function BuildScreen() {
             editable={!isGenerating}
           />
         </View>
+
+        <TouchableOpacity
+          style={[styles.importButton, { backgroundColor: c.card, borderColor: c.border }]}
+          onPress={handleImportKnowledge}
+          disabled={importing || isGenerating}
+          activeOpacity={0.75}
+        >
+          <Ionicons name={importing ? 'hourglass-outline' : 'cloud-upload-outline'} size={17} color="#7C4DFF" />
+          <View style={styles.importCopy}>
+            <Text style={[styles.importTitle, { color: c.foreground }]}>
+              {importing ? 'READING LOCAL FILE…' : 'IMPORT CODE / SKILL'}
+            </Text>
+            <Text style={[styles.importHint, { color: c.mutedForeground }]}>
+              Add .kt, .java, .ts, .json, .md, or skill notes as local references
+            </Text>
+          </View>
+          <Ionicons name="add-circle-outline" size={19} color="#7C4DFF" />
+        </TouchableOpacity>
+        {(knowledge.length > 0 || learnedLessons.length > 0 || importStatus) && (
+          <View style={[styles.memoryRow, { backgroundColor: '#7C4DFF12', borderColor: '#7C4DFF35' }]}>
+            <Ionicons name="hardware-chip-outline" size={15} color="#7C4DFF" />
+            <Text style={[styles.memoryText, { color: c.mutedForeground }]}>
+              {importStatus ?? `${knowledge.length} local reference${knowledge.length === 1 ? '' : 's'} · ${learnedLessons.length} repair lessons remembered`}
+            </Text>
+          </View>
+        )}
 
         {/* ── Error ── */}
         {lastError && (
@@ -492,4 +561,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   continueText: { color: '#0A0A0F', fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
+  importButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    marginTop: 9,
+  },
+  importCopy: { flex: 1, gap: 2 },
+  importTitle: { fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
+  importHint: { fontSize: 10, fontFamily: 'Inter_400Regular' },
+  memoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 7,
+  },
+  memoryText: { flex: 1, fontSize: 10, fontFamily: 'Inter_400Regular' },
 });
