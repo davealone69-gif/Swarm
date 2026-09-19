@@ -69,7 +69,7 @@ export default function ExplorerScreen() {
           {projects.length === 0 && (
             <TouchableOpacity
               style={[styles.navBtn, { backgroundColor: '#00E67620', borderColor: '#00E67640' }]}
-              onPress={() => router.push('/(tabs)/index')}
+              onPress={() => router.push('/(tabs)')}
             >
               <Ionicons name="flash-outline" size={16} color="#00E676" />
               <Text style={[styles.navBtnText, { color: '#00E676' }]}>Go to Build</Text>

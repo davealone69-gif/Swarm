@@ -1,0 +1,1 @@
+- [Offline builder AI](offline-builder-ai.md) — keep prompt planning on-device and ask clarifying questions without paid APIs or cloud credits.

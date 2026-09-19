@@ -27,6 +27,7 @@ export interface GeneratedProject {
   appType: AppType;
   files: GeneratedFile[];
   createdAt: number;
+  decisions?: Record<string, string>;
 }
 
 export type AgentName = 'ARCHITECT' | 'CODER' | 'BUILDER' | 'FIXER' | 'OPTIMIZER';
@@ -250,9 +251,7 @@ function androidManifest(pkg: string, appName: string): GeneratedFile {
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.${appName}">
         <activity
@@ -433,6 +432,38 @@ function stringsXml(appName: string, extra: string = ''): GeneratedFile {
     content: `<resources>
     <string name="app_name">${appName}</string>
 ${extra}</resources>
+`,
+  };
+}
+
+function themesXml(appName: string): GeneratedFile {
+  return {
+    path: 'app/src/main/res/values/themes.xml',
+    language: 'xml',
+    content: `<resources>
+    <style name="Theme.${appName}" parent="android:style/Theme.Material.Light.NoActionBar" />
+</resources>
+`,
+  };
+}
+
+function gradleProperties(): GeneratedFile {
+  return {
+    path: 'gradle.properties',
+    language: 'gradle',
+    content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+kotlin.code.style=official
+android.nonTransitiveRClass=true
+`,
+  };
+}
+
+function proguardRules(): GeneratedFile {
+  return {
+    path: 'app/proguard-rules.pro',
+    language: 'gradle',
+    content: `# SWARM-BUILDER-ZERO keeps release builds simple and debuggable.
 `,
   };
 }
@@ -1624,6 +1655,7 @@ function sleep(ms: number): Promise<void> {
 export async function generateProject(
   prompt: string,
   onAgentProgress: (progress: AgentProgress) => void,
+  decisions: Record<string, string> = {},
 ): Promise<GeneratedProject> {
   const type = detectAppType(prompt);
   const appName = extractAppName(prompt, type);
@@ -1680,6 +1712,9 @@ export async function generateProject(
     typeKt(packageName),
     screen,
     stringsXml(appName),
+    themesXml(appName),
+    gradleProperties(),
+    proguardRules(),
     readmeFile(appName, type, description, packageName),
   ];
 
@@ -1692,5 +1727,6 @@ export async function generateProject(
     appType: type,
     files,
     createdAt: Date.now(),
+    decisions,
   };
 }
